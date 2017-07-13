@@ -724,6 +724,43 @@ class DockerDriver(driver.ContainerDriver):
     def get_available_nodes(self):
         return [self._host.get_hostname()]
 
+    def get_sandbox_name_capsule(self, uuid):
+        return 'zun-sandbox-' + uuid
+
+    def create_sandbox_capsule(self, context, capsule,
+                               image='kubernetes/pause', networks=None):
+        with docker_utils.docker_client() as docker:
+            network_api = zun_network.api(context=context, docker_api=docker)
+            if networks is None:
+                # Find an available neutron net and create docker network by
+                # wrapping the neutron net.
+                neutron_net = self._get_available_network(context)
+                network = self._get_or_create_docker_network(
+                    context, network_api, neutron_net['id'])
+                networks = [network['Name']]
+
+            name = self.get_sandbox_name_capsule(capsule.uuid)
+            sandbox = docker.create_container(image, name=name,
+                                              hostname=name[:63])
+            sandbox['name'] = name
+            security_group_ids = None
+            if hasattr(capsule, 'security_groups'):
+                capsule_security_groups = capsule.get('security_groups', None)
+            else:
+                capsule_security_groups = None
+            if capsule_security_groups is not None:
+                security_group_ids = self._get_security_group_ids(
+                    context, capsule_security_groups)
+            # Container connects to the bridge network by default so disconnect
+            # the container from it before connecting it to neutron network.
+            # This avoids potential conflict between these two networks.
+            network_api.disconnect_container_from_network(sandbox, 'bridge')
+            for network in networks:
+                network_api.connect_container_to_network(sandbox, network,
+                                                         security_group_ids)
+            docker.start(sandbox['Id'])
+            return sandbox
+
 
 class NovaDockerDriver(DockerDriver):
     def add_security_group(self, context, sandbox_id, security_group):

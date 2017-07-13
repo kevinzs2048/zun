@@ -617,3 +617,141 @@ class Manager(object):
                                                          self.driver)
             self._resource_tracker = rt
         return self._resource_tracker
+
+    def capsule_create(self, context, capsule, limits):
+        utils.spawn_n(self._do_capsule_create, context, capsule, limits)
+
+    def _do_capsule_create(self, context, capsule, limits=None):
+        sandbox_container_id =\
+            self._do_sandbox_container_create(context,
+                                              capsule,
+                                              capsule.containers[0],
+                                              limits)
+        count = len(capsule.containers)
+        for k in range(1, count):
+            created_container = self._do_func_container_create(
+                context, capsule.containers[k], sandbox_container_id, limits)
+
+            if created_container:
+                self._do_container_start(context, created_container)
+
+    def _do_sandbox_container_create(self, context, capsule,
+                                     container, limits=None, reraise=False):
+        LOG.debug('Creating sandbox: %s', capsule.uuid)
+        if ('NovaDockerDriver' in CONF.container_driver and
+                container.security_groups):
+            msg = "security_groups can not be provided with NovaDockerDriver"
+            self._fail_container(self, context, container, msg)
+            return
+
+        sandbox_image = CONF.sandbox_image
+        sandbox_image_driver = CONF.sandbox_image_driver
+        sandbox_image_pull_policy = CONF.sandbox_image_pull_policy
+        container.image = sandbox_image
+        container.image_driver = sandbox_image_driver
+        container.image_pull_policy = sandbox_image_pull_policy
+        container.task_state = consts.CONTAINER_CREATING
+        container.save(context)
+        repo, tag = utils.parse_image_name(sandbox_image)
+        try:
+            image, image_loaded = image_driver.pull_image(
+                context, repo, tag, sandbox_image_pull_policy,
+                sandbox_image_driver)
+            if not image_loaded:
+                self.driver.load_image(image['path'])
+            sandbox = self.driver.create_sandbox_capsule(context, capsule,
+                                                         image=sandbox_image)
+            container.name = sandbox['name']
+            container.task_state = None
+            container.status = consts.RUNNING
+            container.status_reason = None
+            container.container_id = sandbox['Id']
+            container.sandbox_id = sandbox['Id']
+            container.save(context)
+        except Exception as e:
+            with excutils.save_and_reraise_exception(reraise=reraise):
+                LOG.exception("Unexpected exception: %s",
+                              six.text_type(e))
+                container.state = consts.ERROR
+                container.save(context)
+            return
+        return sandbox['Id']
+
+    # for demo. Will remove after the BP:
+    # https://blueprints.launchpad.net/zun/+spec/make-sandbox-optional
+    # has finished
+    def _do_func_container_create(self, context, container,
+                                  sandbox_id, limits=None, reraise=False):
+        LOG.debug('Creating container: %s', container.uuid)
+
+        # check if container driver is NovaDockerDriver and
+        # security_groups is non empty, then return by setting
+        # the error message in database
+        if ('NovaDockerDriver' in CONF.container_driver and
+                container.security_groups):
+            msg = "security_groups can not be provided with NovaDockerDriver"
+            self._fail_container(self, context, container, msg)
+            return
+
+        self.driver.set_sandbox_id(container, sandbox_id)
+        container.task_state = consts.IMAGE_PULLING
+        container.save(context)
+        repo, tag = utils.parse_image_name(container.image)
+        image_pull_policy = utils.get_image_pull_policy(
+            container.image_pull_policy, tag)
+        image_driver_name = container.image_driver
+        try:
+            image, image_loaded = image_driver.pull_image(
+                context, repo, tag, image_pull_policy, image_driver_name)
+            if not image_loaded:
+                self.driver.load_image(image['path'])
+        except exception.ImageNotFound as e:
+            with excutils.save_and_reraise_exception(reraise=reraise):
+                LOG.error(six.text_type(e))
+                self._do_sandbox_cleanup(context, sandbox_id)
+                self._fail_container(context, container, six.text_type(e))
+            return
+        except exception.DockerError as e:
+            with excutils.save_and_reraise_exception(reraise=reraise):
+                LOG.error("Error occurred while calling Docker image API: %s",
+                          six.text_type(e))
+                self._do_sandbox_cleanup(context, sandbox_id)
+                self._fail_container(context, container, six.text_type(e))
+            return
+        except Exception as e:
+            with excutils.save_and_reraise_exception(reraise=reraise):
+                LOG.exception("Unexpected exception: %s",
+                              six.text_type(e))
+                self._do_sandbox_cleanup(context, sandbox_id)
+                self._fail_container(context, container, six.text_type(e))
+            return
+
+        container.task_state = consts.CONTAINER_CREATING
+        container.image_driver = image.get('driver')
+        container.save(context)
+        try:
+            limits = limits
+            rt = self._get_resource_tracker()
+            with rt.container_claim(context, container, container.host,
+                                    limits):
+                container = self.driver.create(context, container,
+                                               sandbox_id, image)
+                container.task_state = None
+                container.save(context)
+                return container
+        except exception.DockerError as e:
+            with excutils.save_and_reraise_exception(reraise=reraise):
+                LOG.error("Error occurred while calling Docker create API: %s",
+                          six.text_type(e))
+                self._do_sandbox_cleanup(context, sandbox_id)
+                self._fail_container(context, container, six.text_type(e),
+                                     unset_host=True)
+            return
+        except Exception as e:
+            with excutils.save_and_reraise_exception(reraise=reraise):
+                LOG.exception("Unexpected exception: %s",
+                              six.text_type(e))
+                self._do_sandbox_cleanup(context, sandbox_id)
+                self._fail_container(context, container, six.text_type(e),
+                                     unset_host=True)
+            return

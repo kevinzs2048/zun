@@ -172,3 +172,11 @@ class API(rpc_service.API):
         return self._call(host, 'image_search', image=image,
                           image_driver_name=image_driver,
                           exact_match=exact_match)
+
+    def capsule_create(self, context, host, capsule, limits):
+        self._cast(host, 'capsule_create',
+                   capsule=capsule, limits=limits)
+
+    def capsule_show(self, context, capsule):
+        return self._call(capsule.host, 'capsule_show',
+                          capsule=capsule)

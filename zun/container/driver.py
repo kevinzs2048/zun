@@ -233,3 +233,11 @@ class ContainerDriver(object):
         if nodename in self.get_available_nodes():
             return True
         return False
+
+    def get_sandbox_name_capsule(self, uuid):
+        """Set capsule sandbox container name."""
+        raise NotImplementedError()
+
+    def create_sandbox_capsule(self, context, capsule, image, networks):
+        """Create capsule sandbox container."""
+        raise NotImplementedError()
