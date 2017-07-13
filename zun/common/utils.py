@@ -278,3 +278,25 @@ def parse_floating_cpu(spec):
                 raise exception.Invalid()
 
     return cpuset_ids
+
+
+def check_capsule_template(tpl):
+    # TODO(kevinz): add volume spec check
+    if tpl.get('kind', None) != 'capsule':
+        raise exception.InvalidCapsuleTemplate("kind fields need to "
+                                               "be set as capsule")
+    spec_field = tpl.get('spec', None)
+    if spec_field.get('containers', None) is None:
+        raise exception.InvalidCapsuleTemplate("No valid containers field")
+    containers_spec = spec_field.get('containers', None)
+    containers_num = len(containers_spec)
+    if containers_num == 0:
+        raise exception.InvalidCapsuleTemplate("Capsule need to have one "
+                                               "container at least")
+
+    for i in range(0, containers_num):
+        container_image = containers_spec[i].get('image', None)
+        if container_image is None:
+            raise exception.InvalidCapsuleTemplate("Container "
+                                                   "image is needed")
+    return containers_spec

@@ -499,3 +499,15 @@ class ValidationError(ZunException):
 
 class ResourcesUnavailable(ZunException):
     message = _("Insufficient compute resources: %(reason)s.")
+
+
+class CapsuleAlreadyExists(ResourceExists):
+    message = _("A capsule with %(field)s %(value)s already exists.")
+
+
+class CapsuleNotFound(HTTPNotFound):
+    message = _("Capsule %(capsule)s could not be found.")
+
+
+class InvalidCapsuleTemplate(ZunException):
+    message = _("Invalid capsule template: %(reason)s.")

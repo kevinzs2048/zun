@@ -212,3 +212,7 @@ security_groups = {
         'maxLength': 255
     }
 }
+
+spec = {
+    'type': ['object'],
+}
