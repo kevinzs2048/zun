@@ -75,6 +75,14 @@ def validate_container_state(container, action):
             actual_state=container.status)
 
 
+def validate_capsule_state(capsule, action):
+    if capsule.status not in VALID_STATES[action]:
+        raise exception.InvalidStateException(
+            id=capsule.uuid,
+            action=action,
+            actual_state=capsule.status)
+
+
 def safe_rstrip(value, chars=None):
     """Removes trailing characters from a string if that does not make it empty
 

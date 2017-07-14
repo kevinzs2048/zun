@@ -24,7 +24,7 @@ _basic_keys = (
     'restart_policy',
     'meta_name',
     'meta_labels',
-    'containers_uuid',
+    'containers_uuids',
     'capsule_version'
 )
 

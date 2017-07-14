@@ -85,7 +85,6 @@ def get_resource(resource, resource_ident):
     :returns: The resource.
     """
     resource = getattr(objects, resource)
-
     if uuidutils.is_uuid_like(resource_ident):
         return resource.get_by_uuid(pecan.request.context, resource_ident)
 

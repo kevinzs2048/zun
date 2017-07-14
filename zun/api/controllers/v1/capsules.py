@@ -129,7 +129,7 @@ class CapsuleController(base.Controller):
         # Sync status for container inside capsule
         for i, c in enumerate(capsules):
             try:
-                containers_list = c.containers_uuid
+                containers_list = c.containers_uuids
                 if containers_list is not None:
                     # Capsule is depending on infra container status
                     uuid = containers_list[0]
@@ -173,7 +173,7 @@ class CapsuleController(base.Controller):
         new_capsule = objects.Capsule(context, **capsule_dict)
         new_capsule.create(context)
         new_capsule.containers = []
-        new_capsule.containers_uuid = []
+        new_capsule.containers_uuids = []
         new_capsule.volumes = []
         count = len(containers_spec)
 
@@ -190,7 +190,7 @@ class CapsuleController(base.Controller):
         sandbox_container.user_id = context.user_id
         sandbox_container.create(context)
         new_capsule.containers.append(sandbox_container)
-        new_capsule.containers_uuid.append(sandbox_container.uuid)
+        new_capsule.containers_uuids.append(sandbox_container.uuid)
 
         for k in range(0, count):
             container_dict = containers_spec[k]
@@ -271,7 +271,7 @@ class CapsuleController(base.Controller):
             new_container = objects.Container(context, **container_dict)
             new_container.create(context)
             new_capsule.containers.append(new_container)
-            new_capsule.containers_uuid.append(new_container.uuid)
+            new_capsule.containers_uuids.append(new_container.uuid)
 
         new_capsule.save(context)
         compute_api.capsule_create(context, new_capsule)
@@ -295,6 +295,38 @@ class CapsuleController(base.Controller):
         compute_api = pecan.request.compute_api
         container = compute_api.container_show(context, container)
         return view.format_container(pecan.request.host_url, container)
+
+    @pecan.expose('json')
+    @exception.wrap_pecan_controller_exception
+    def delete(self, capsule_id, force=False):
+        """Delete a capsule.
+
+        :param capsule_ident: UUID or Name of a capsule.
+        """
+        capsule = _get_capsule(capsule_id)
+        check_policy_on_capsule(capsule.as_dict(), "capsule:delete")
+        try:
+            force = strutils.bool_from_string(force, strict=True)
+        except ValueError:
+            msg = _('Valid force values are true, false, 0, 1, yes and no')
+            raise exception.InvalidValue(msg)
+
+        if not force:
+            utils.validate_container_state(capsule, 'delete')
+        else:
+            utils.validate_container_state(capsule, 'delete_force')
+        containers_num = len(capsule.containers_uuids)
+        context = pecan.request.context
+        compute_api = pecan.request.compute_api
+        capsule.task_state = consts.CONTAINER_DELETING
+        capsule.save(context)
+        for k in range(0, containers_num):
+            container = _get_container(capsule.containers_uuids[k])
+            compute_api.container_delete(context, container, force)
+        capsule.task_state = None
+        capsule.save(context)
+        capsule.destroy(context)
+        pecan.response.status = 204
 
     def _generate_name_for_container_inside_capsule(self, capsule_uuid=None):
         '''Generate a random name like: zeta-22-container.'''

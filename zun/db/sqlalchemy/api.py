@@ -771,7 +771,6 @@ class Connection(object):
 
     def get_capsule_by_uuid(self, context, capsule_uuid):
         query = model_query(models.Capsule)
-        query = self._add_tenant_filters(context, query)
         query = query.filter_by(uuid=capsule_uuid)
         try:
             return query.one()

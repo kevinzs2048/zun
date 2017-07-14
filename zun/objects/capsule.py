@@ -49,7 +49,7 @@ class Capsule(base.ZunPersistentObject, base.ZunObject):
         'meta_name': fields.StringField(nullable=True),
         'meta_labels': z_fields.JsonField(nullable=True),
         'containers': fields.ListOfObjectsField('Container', nullable=True),
-        'containers_uuid': fields.ListOfStringsField(nullable=True),
+        'containers_uuids': fields.ListOfStringsField(nullable=True),
         # add volumes after Cinder integration is ready
         # 'volumes': fields.ListOfObjectsField(nullable=True),
     }
