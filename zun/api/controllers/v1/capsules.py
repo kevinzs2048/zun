@@ -289,12 +289,22 @@ class CapsuleController(base.Controller):
 
         :param capsule_ident: UUID or name of a capsule.
         """
-        container = _get_capsule(capsule_id)
-#        check_policy_on_container(capsule.as_dict(), "capsule:get")
+        capsule = _get_capsule(capsule_id)
+        check_policy_on_capsule(capsule.as_dict(), "capsule:get")
         context = pecan.request.context
         compute_api = pecan.request.compute_api
-        container = compute_api.container_show(context, container)
-        return view.format_container(pecan.request.host_url, container)
+        sandbox = _get_container(capsule.containers_uuids[0])
+
+        try:
+            container = compute_api.container_show(context, sandbox)
+            capsule.status = container.status
+            capsule.save(context)
+        except Exception as e:
+            LOG.exception(("Error while show capsule %(uuid)s: "
+                           "%(e)s."),
+                          {'uuid': capsule.uuid, 'e': e})
+            capsule.status = consts.UNKNOWN
+        return view.format_capsule(pecan.request.host_url, capsule)
 
     @pecan.expose('json')
     @exception.wrap_pecan_controller_exception
